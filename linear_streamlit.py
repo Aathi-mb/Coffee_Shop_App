@@ -1,66 +1,56 @@
-# app.py
-
+# linear_streamlit.py
 import streamlit as st
-import openai
-import os
+import pickle
+import pandas as pd
 
-# -----------------------------
-# CONFIG
-# -----------------------------
-st.set_page_config(page_title="Java's Coffee Chat ☕️", page_icon="☕️", layout="centered")
+# Load your model
+with open("coffee_sales_model.pkl", "rb") as f:
+    model = pickle.load(f)
 
-# Make sure your OpenAI API key is set in environment variables
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# Load scaler if used
+with open("scaler.pkl", "rb") as f:
+    scaler = pickle.load(f)
 
-# -----------------------------
-# SESSION STATE
-# -----------------------------
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+# Load feature selector if used
+with open("feature_selector.pkl", "rb") as f:
+    selector = pickle.load(f)
 
-if "refresh" not in st.session_state:
-    st.session_state.refresh = False
+st.title("☕ Coffee Shop Sales Prediction App")
 
-# -----------------------------
-# FUNCTIONS
-# -----------------------------
-def send_prompt(prompt):
-    """Send user prompt to OpenAI API and get a response."""
-    try:
-        response = openai.Completion.create(
-            engine="text-davinci-003",  # or gpt-3.5-turbo if using ChatCompletion
-            prompt=prompt,
-            max_tokens=150,
-            temperature=0.7
-        )
-        return response.choices[0].text.strip()
-    except Exception as e:
-        return f"⚠️ Error: {e}"
+# Input fields
+st.header("Enter Coffee Order Details")
+coffee_type = st.selectbox("Coffee Type", ["Espresso", "Latte", "Cappuccino"])
+size = st.selectbox("Size", ["Small", "Medium", "Large"])
+addons = st.multiselect("Add-ons", ["Extra Shot", "Syrup", "Whipped Cream"])
+quantity = st.number_input("Quantity", min_value=1, max_value=50, value=1)
 
-# -----------------------------
-# UI
-# -----------------------------
-st.title("☕ Java's Coffee Chat")
-st.write("Pull up a chair, drop a prompt, and let the barista (LLM) pour answers!")
+# Prepare input data
+input_dict = {
+    "Coffee_Type": coffee_type,
+    "Size": size,
+    "Addons": ", ".join(addons) if addons else "None",
+    "Quantity": quantity
+}
 
-# Input
-user_input = st.text_input("Your Question:", "")
+input_df = pd.DataFrame([input_dict])
 
-if st.button("Send"):
-    if user_input.strip() != "":
-        answer = send_prompt(user_input)
-        st.session_state.chat_history.append({"user": user_input, "bot": answer})
-        # Safe rerun
-        st.session_state.refresh = not st.session_state.refresh
-        st.experimental_rerun()
+# Feature selection if used
+try:
+    input_df = selector.transform(input_df)
+except:
+    pass  # If selector not used or columns match, skip
 
-# Display chat history
-for chat in st.session_state.chat_history:
-    st.markdown(f"**You:** {chat['user']}")
-    st.markdown(f"**Barista:** {chat['bot']}")
-    st.markdown("---")
+# Scaling if used
+try:
+    input_df = scaler.transform(input_df)
+except:
+    pass  # If scaler not used, skip
 
-# Optional: clear chat
-if st.button("☕ Clear Chat"):
-    st.session_state.chat_history = []
-    st.experimental_rerun()
+# Prediction button
+if st.button("Predict Sales"):
+    prediction = model.predict(input_df)
+    st.success(f"Predicted Sale Price: ₹{prediction[0]:.2f}")
+
+# Optional: safe rerun (avoid crash)
+if st.button("Reset App"):
+    st.experimental_rerun()  # Safe when inside a button
